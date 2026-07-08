@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HTMLエディタ</title>
+<meta name="description" content="Web記事用のHTMLをタグボタンですばやく編集できるエディタ">
+<meta name="theme-color" content="#E8EDF3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D141C" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="HTMLエディタ">
+</head>
+<body>
+<style>
+  :root {
+    --bg: #E8EDF3;
+    --panel: #FFFFFF;
+    --panel-press: #EEF3F8;
+    --text: #17222E;
+    --muted: #67798D;
+    --border: #CDD8E3;
+    --accent: #0B7285;
+    --accent-press: #095E6D;
+    --accent-contrast: #FFFFFF;
+    --accent-soft: #E1F1F5;
+    --shadow: 0 1px 2px rgba(23, 34, 46, 0.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0D141C;
+      --panel: #151E28;
+      --panel-press: #1D2937;
+      --text: #E2EAF2;
+      --muted: #7E90A3;
+      --border: #2A3848;
+      --accent: #3BC9DB;
+      --accent-press: #66D9E8;
+      --accent-contrast: #06222B;
+      --accent-soft: #103641;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+
+  #app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── ヘッダー ── */
+  header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .brand {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 0 4px;
+  }
+  #filename {
+    flex: 1;
+    min-width: 130px;
+    font-size: 16px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 44px;
+  }
+  #filename:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ── タブバー ── */
+  #tabbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #tabbar::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 40px;
+    padding: 0 4px 0 14px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    color: var(--muted);
+    font-size: 14px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab.active {
+    background: var(--panel);
+    border-color: var(--border);
+    color: var(--text);
+    box-shadow: var(--shadow);
+  }
+  .tab-name {
+    max-width: 9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .tab-close {
+    min-height: 32px;
+    min-width: 32px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    color: var(--muted);
+    font-size: 16px;
+    border-radius: 7px;
+  }
+  .tab-close:active { background: var(--panel-press); }
+  .tab.armed .tab-close {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+  #btnAddTab {
+    flex: none;
+    min-height: 40px;
+    min-width: 40px;
+    padding: 0;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--accent);
+  }
+
+  button {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 9px;
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 15px;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    white-space: nowrap;
+  }
+  button:active { background: var(--panel-press); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-contrast);
+  }
+  button.active:active { background: var(--accent-press); }
+  button.armed {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    button { transition: background-color 0.12s ease; }
+  }
+
+  /* ── タグツールバー ── */
+  #toolbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar button.tag {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 14.5px;
+    padding: 0 13px;
+  }
+  #toolbar button.tag::before { content: "<"; color: var(--muted); }
+  #toolbar button.tag::after { content: ">"; color: var(--muted); }
+  .divider {
+    flex: none;
+    width: 1px;
+    align-self: stretch;
+    margin: 4px 3px;
+    background: var(--border);
+  }
+
+  /* ── 検索・置換バー ── */
+  #searchbar {
+    flex: none;
+    display: none;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  #app.search #searchbar { display: flex; }
+  #searchbar .group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 250px;
+  }
+  #searchbar input {
+    flex: 1;
+    min-width: 80px;
+    font-size: 16px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 44px;
+  }
+  #searchbar input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #searchbar button { padding: 0 12px; }
+  #matchCount {
+    flex: none;
+    min-width: 3.2em;
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── 編集面とプレビュー ── */
+  #main { flex: 1; min-height: 0; display: flex; }
+  #editor {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    resize: none;
+    padding: 14px 16px 40vh;
+    font: 16px/1.7 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--panel);
+    color: var(--text);
+    caret-color: var(--accent);
+    -webkit-text-size-adjust: 100%;
+  }
+  #editor::selection { background: rgba(14, 165, 197, 0.3); }
+  #preview {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    display: none;
+    background: var(--panel);
+  }
+  #app.preview #preview { display: block; }
+  @media (max-width: 899px) {
+    #app.preview #editor { display: none; }
+  }
+  @media (min-width: 900px) {
+    #app.preview #editor { border-right: 1px solid var(--border); }
+  }
+
+  /* ── ステータスバー ── */
+  footer {
+    flex: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 16px calc(7px + env(safe-area-inset-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  #note { color: var(--accent); }
+</style>
+
+<div id="app">
+  <header>
+    <span class="brand">&lt;/&gt;</span>
+    <input id="filename" value="article.html" autocapitalize="none" autocorrect="off" spellcheck="false" aria-label="ファイル名">
+    <div class="actions">
+      <button type="button" id="btnOpen">開く</button>
+      <button type="button" id="btnSave">保存</button>
+      <button type="button" id="btnShare">共有</button>
+      <button type="button" id="btnCopy">コピー</button>
+      <button type="button" id="btnPreview">プレビュー</button>
+    </div>
+  </header>
+
+  <div id="tabbar" role="tablist" aria-label="開いているファイル">
+    <button type="button" id="btnAddTab" aria-label="新しいタブ">＋</button>
+  </div>
+
+  <div id="toolbar" role="toolbar" aria-label="タグ挿入"></div>
+
+  <div id="searchbar">
+    <div class="group">
+      <input id="searchInput" placeholder="検索" autocapitalize="none" autocorrect="off" spellcheck="false" aria-label="検索">
+      <span id="matchCount"></span>
+      <button type="button" id="btnCase" aria-pressed="false" title="大文字と小文字を区別">Aa</button>
+      <button type="button" id="btnPrev" aria-label="前へ">↑</button>
+      <button type="button" id="btnNext" aria-label="次へ">↓</button>
+      <button type="button" id="btnCloseSearch" aria-label="検索を閉じる">×</button>
+    </div>
+    <div class="group">
+      <input id="replaceInput" placeholder="置換" autocapitalize="none" autocorrect="off" spellcheck="false" aria-label="置換">
+      <button type="button" id="btnReplace">置換</button>
+      <button type="button" id="btnReplaceAll">すべて置換</button>
+    </div>
+  </div>
+
+  <main id="main">
+    <textarea id="editor" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="HTMLソース" placeholder="ここにHTMLを入力…"></textarea>
+    <iframe id="preview" sandbox title="プレビュー"></iframe>
+  </main>
+
+  <footer>
+    <span id="count"></span>
+    <span id="note"></span>
+  </footer>
+
+  <input type="file" id="fileInput" accept=".html,.htm,.txt,.md" hidden>
+</div>
+
+<script>
+  // ═══════════════════════════════════════════════════════════
+  //  タグボタン設定 ── ここに行を足せばボタンが増えます
+  //    label     : ボタンの表示名（<>は自動で付きます）
+  //    before/after : 選択テキストの前後に挿入する文字列
+  //    block     : true なら複数行選択時に1行ずつタグで囲む
+  //    cursor    : 未選択時のカーソル位置（挿入文字列の先頭から数えた文字数。
+  //                省略時は before の直後 = タグの中）
+  //    selCursor : 選択テキストを囲んだ後のカーソル位置（省略時は末尾）
+  //    list      : 'ul' / 'ol' — 選択した各行を <li> にしてリスト化
+  //    sep       : true で区切り線
+  // ═══════════════════════════════════════════════════════════
+  const TAG_BUTTONS = [
+    { label: 'h2', before: '<h2>', after: '</h2>', block: true },
+    { label: 'h3', before: '<h3>', after: '</h3>', block: true },
+    { label: 'h4', before: '<h4>', after: '</h4>', block: true },
+    { label: 'p',  before: '<p>',  after: '</p>',  block: true },
+    { sep: true },
+    { label: 'strong', before: '<strong>', after: '</strong>' },
+    { label: 'em',     before: '<em>',     after: '</em>' },
+    { label: 'a',      before: '<a href="">', after: '</a>', cursor: 9, selCursor: 9 },
+    { label: 'code',   before: '<code>',   after: '</code>' },
+    { label: 'mark',   before: '<mark>',   after: '</mark>' },
+    { sep: true },
+    { label: 'ul', list: 'ul' },
+    { label: 'ol', list: 'ol' },
+    { label: 'li', before: '<li>', after: '</li>', block: true },
+    { label: 'blockquote', before: '<blockquote>', after: '</blockquote>', block: true },
+    { sep: true },
+    { label: 'img', before: '<img src="', after: '" alt="">' },
+    { label: 'br',  before: '<br>', after: '' },
+    { label: 'hr',  before: '<hr>', after: '' },
+  ];
+
+  const $ = id => document.getElementById(id);
+  const app = $('app'), editor = $('editor'), previewFrame = $('preview'),
+        toolbar = $('toolbar'), filenameInput = $('filename'), fileInput = $('fileInput'),
+        countEl = $('count'), noteEl = $('note'), btnPreview = $('btnPreview'),
+        btnShare = $('btnShare'), tabbar = $('tabbar'), btnAddTab = $('btnAddTab');
+
+  const KEY = 'ipad-html-editor-v2';
+  const KEY_V1 = 'ipad-html-editor-v1';
+  const SAMPLE = '<h2>使い方</h2>\n<p>テキストを選択してからタグボタンを押すと、選択範囲がタグで囲まれます。</p>\n<p>何も選択せずに押すと空のタグが挿入され、カーソルがタグの中に置かれます。</p>\n<p>複数行を選択して p や h2 を押すと、1行ずつタグで囲まれます。ul は選択した各行を li にします。</p>\n<p>上のタブで複数のファイルを切り替えられます。＋ボタンで新しいタブを追加できます。</p>';
+
+  // ── テキスト挿入（execCommand が使える間は取り消し履歴が残る）──
+  function insert(text, cs, ce) {
+    editor.focus();
+    const start = editor.selectionStart;
+    const collapsed = editor.selectionStart === editor.selectionEnd;
+    if (text === '' && collapsed) { editor.setSelectionRange(start + cs, start + ce); return; }
+    let ok = false;
+    try {
+      ok = text === ''
+        ? document.execCommand('delete', false)
+        : document.execCommand('insertText', false, text);
+    } catch (_) {}
+    if (!ok) {
+      editor.setRangeText(text, editor.selectionStart, editor.selectionEnd, 'end');
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    editor.setSelectionRange(start + cs, start + ce);
+  }
+
+  function listText(type, sel) {
+    const open = '<' + type + '>\n', close = '\n</' + type + '>';
+    if (sel.trim()) {
+      const items = sel.split('\n').map(l => l.trim()).filter(Boolean)
+        .map(l => '  <li>' + l + '</li>').join('\n');
+      const text = open + items + close;
+      return { text, cur: text.length };
+    }
+    const text = open + '  <li></li>' + close;
+    return { text, cur: (open + '  <li>').length };
+  }
+
+  function applyTag(b) {
+    const v = editor.value, s = editor.selectionStart, e = editor.selectionEnd;
+    const sel = v.slice(s, e);
+    let text, cur;
+    if (b.list) {
+      const r = listText(b.list, sel);
+      text = r.text; cur = r.cur;
+    } else if (sel) {
+      if (b.block && sel.includes('\n')) {
+        text = sel.split('\n').map(l => l.trim() ? b.before + l.trim() + b.after : l).join('\n');
+        cur = text.length;
+      } else {
+        text = b.before + sel + b.after;
+        cur = b.selCursor != null ? b.selCursor : text.length;
+      }
+    } else {
+      text = b.before + b.after;
+      cur = b.cursor != null ? b.cursor : b.before.length;
+    }
+    insert(text, cur, cur);
+  }
+
+  // ── ツールバー生成 ──
+  function mkBtn(t) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = t;
+    return b;
+  }
+  function divider() {
+    const d = document.createElement('div');
+    d.className = 'divider';
+    return d;
+  }
+  const undoBtn = mkBtn('↺');
+  undoBtn.setAttribute('aria-label', '元に戻す');
+  undoBtn.addEventListener('click', () => { editor.focus(); document.execCommand('undo'); });
+  const redoBtn = mkBtn('↻');
+  redoBtn.setAttribute('aria-label', 'やり直す');
+  redoBtn.addEventListener('click', () => { editor.focus(); document.execCommand('redo'); });
+  const searchBtn = mkBtn('検索');
+  searchBtn.setAttribute('aria-label', '検索と置換');
+  searchBtn.addEventListener('click', () => {
+    app.classList.contains('search') ? closeSearch() : openSearch();
+  });
+  toolbar.append(undoBtn, redoBtn, searchBtn, divider());
+  for (const b of TAG_BUTTONS) {
+    if (b.sep) { toolbar.append(divider()); continue; }
+    const el = mkBtn(b.label);
+    el.classList.add('tag');
+    el.addEventListener('click', () => applyTag(b));
+    toolbar.append(el);
+  }
+  // ボタンタップでキーボードが閉じないよう、フォーカス移動を止める
+  toolbar.addEventListener('mousedown', e => e.preventDefault());
+
+  // ── プレビュー ──
+  const PREVIEW_CSS = [
+    ':root{color-scheme:light dark}',
+    'body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.9;max-width:720px;margin:0 auto;padding:28px 20px 120px;color:#17222E;background:#fff}',
+    'h2{font-size:1.4em;line-height:1.5;margin:2em 0 .8em;padding-bottom:.35em;border-bottom:2px solid #CDD8E3}',
+    'h3{font-size:1.2em;line-height:1.5;margin:1.6em 0 .6em}',
+    'h4{font-size:1.05em;margin:1.4em 0 .5em}',
+    'p{margin:1em 0}',
+    'img{max-width:100%;height:auto;border-radius:6px}',
+    'blockquote{margin:1.2em 0;padding:.6em 1.1em;border-left:4px solid #CDD8E3;color:#5C6B7C;background:rgba(23,34,46,.04)}',
+    'code{font-family:ui-monospace,Menlo,monospace;font-size:.88em;background:rgba(23,34,46,.07);padding:.15em .4em;border-radius:4px}',
+    'mark{background:#FFE289;color:#17222E;padding:.05em .25em;border-radius:3px}',
+    'a{color:#0B7285}',
+    'ul,ol{padding-left:1.6em}',
+    'li{margin:.3em 0}',
+    'hr{border:none;border-top:1px solid #CDD8E3;margin:2em 0}',
+    '@media(prefers-color-scheme:dark){body{color:#E2EAF2;background:#0D141C}h2,hr{border-color:#2A3848}blockquote{border-color:#2A3848;color:#8296AB;background:rgba(255,255,255,.04)}code{background:rgba(255,255,255,.1)}a{color:#4DD4E8}}'
+  ].join('');
+
+  function updatePreview() {
+    const c = editor.value;
+    previewFrame.srcdoc = /<!doctype|<html[\s>]/i.test(c)
+      ? c
+      : '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>' + PREVIEW_CSS + '</style></head><body>' + c + '</body></html>';
+  }
+  btnPreview.addEventListener('click', () => {
+    const on = app.classList.toggle('preview');
+    btnPreview.textContent = on ? '閉じる' : 'プレビュー';
+    btnPreview.classList.toggle('active', on);
+    if (on) updatePreview();
+  });
+
+  // ── タブ管理 ──
+  let docs = [];       // { id, name, content, sel, scroll }
+  let activeId = null;
+  let uid = 1;
+  let armedTabId = null, armedTabTimer = 0;
+
+  function activeDoc() { return docs.find(d => d.id === activeId); }
+
+  function saveActive() {
+    const d = activeDoc();
+    if (!d) return;
+    d.content = editor.value;
+    d.name = filenameInput.value;
+    d.sel = [editor.selectionStart, editor.selectionEnd];
+    d.scroll = editor.scrollTop;
+  }
+
+  function renderTabs() {
+    tabbar.querySelectorAll('.tab').forEach(el => el.remove());
+    for (const d of docs) {
+      const tab = document.createElement('div');
+      tab.className = 'tab' + (d.id === activeId ? ' active' : '') + (d.id === armedTabId ? ' armed' : '');
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(d.id === activeId));
+      tab.tabIndex = 0;
+      const nm = document.createElement('span');
+      nm.className = 'tab-name';
+      nm.textContent = d.name;
+      const cl = document.createElement('button');
+      cl.type = 'button';
+      cl.className = 'tab-close';
+      cl.setAttribute('aria-label', d.name + ' を閉じる');
+      cl.textContent = '×';
+      cl.addEventListener('click', e => { e.stopPropagation(); requestClose(d.id); });
+      tab.append(nm, cl);
+      tab.addEventListener('click', () => switchTo(d.id));
+      tab.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchTo(d.id); }
+      });
+      tabbar.insertBefore(tab, btnAddTab);
+    }
+  }
+
+  function switchTo(id) {
+    if (id === activeId) return;
+    saveActive();
+    activeId = id;
+    const d = activeDoc();
+    if (!d) return;
+    editor.value = d.content;
+    filenameInput.value = d.name;
+    const sel = d.sel || [0, 0];
+    editor.setSelectionRange(sel[0], sel[1]);
+    editor.scrollTop = d.scroll || 0;
+    updateCount();
+    if (app.classList.contains('preview')) updatePreview();
+    if (app.classList.contains('search')) updateMatchCount();
+    renderTabs();
+    schedulePersist();
+  }
+
+  function addDoc(name, content, activate) {
+    const d = { id: uid++, name, content, sel: [0, 0], scroll: 0 };
+    docs.push(d);
+    if (activate === false) renderTabs();
+    else switchTo(d.id);
+    return d;
+  }
+
+  function uniqueName(base) {
+    const m = base.match(/^(.*?)(\.[^.]+)?$/);
+    const stem = m[1], ext = m[2] || '';
+    let n = base, i = 2;
+    while (docs.some(d => d.name === n)) n = stem + '-' + (i++) + ext;
+    return n;
+  }
+
+  function requestClose(id) {
+    const d = docs.find(x => x.id === id);
+    if (!d) return;
+    const content = id === activeId ? editor.value : d.content;
+    if (content.trim() && armedTabId !== id) {
+      armedTabId = id;
+      clearTimeout(armedTabTimer);
+      armedTabTimer = setTimeout(() => { armedTabId = null; renderTabs(); }, 2500);
+      renderTabs();
+      flash('もう一度タップでタブを閉じます');
+      return;
+    }
+    clearTimeout(armedTabTimer);
+    armedTabId = null;
+    closeDoc(id);
+  }
+
+  function closeDoc(id) {
+    const idx = docs.findIndex(x => x.id === id);
+    if (idx === -1) return;
+    docs.splice(idx, 1);
+    if (id === activeId) {
+      activeId = null;
+      if (docs.length) switchTo(docs[Math.min(idx, docs.length - 1)].id);
+      else addDoc('article.html', '');
+    } else {
+      renderTabs();
+      schedulePersist();
+    }
+  }
+
+  btnAddTab.addEventListener('click', () => addDoc(uniqueName('article.html'), ''));
+  // タブ操作でエディタのキーボードが閉じないようにフォーカス移動を止める
+  tabbar.addEventListener('mousedown', e => e.preventDefault());
+
+  // ── 自動保存と文字数 ──
+  let saveT, prevT;
+  function schedulePersist() { clearTimeout(saveT); saveT = setTimeout(persist, 600); }
+  editor.addEventListener('input', () => {
+    const d = activeDoc();
+    if (d) d.content = editor.value;
+    updateCount();
+    schedulePersist();
+    if (app.classList.contains('preview')) {
+      clearTimeout(prevT); prevT = setTimeout(updatePreview, 300);
+    }
+    if (app.classList.contains('search')) updateMatchCount();
+  });
+  filenameInput.addEventListener('input', () => {
+    const d = activeDoc();
+    if (d) {
+      d.name = filenameInput.value;
+      const t = tabbar.querySelector('.tab.active .tab-name');
+      if (t) t.textContent = d.name;
+    }
+    schedulePersist();
+  });
+
+  function updateCount() {
+    countEl.textContent = '文字数 ' + editor.value.length.toLocaleString('ja-JP');
+  }
+  function persist() {
+    try {
+      saveActive();
+      localStorage.setItem(KEY, JSON.stringify({
+        v: 2,
+        active: docs.findIndex(d => d.id === activeId),
+        docs: docs.map(d => ({ name: d.name, content: d.content }))
+      }));
+      flash('自動保存しました');
+    } catch (_) {}
+  }
+  function flash(msg) {
+    noteEl.textContent = msg;
+    clearTimeout(flash.t);
+    flash.t = setTimeout(() => { noteEl.textContent = ''; }, 2500);
+  }
+
+  // ── ファイル操作 ──
+  $('btnOpen').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files[0];
+    if (!f) return;
+    const text = await f.text();
+    const cur = activeDoc();
+    if (cur && !editor.value.trim()) {
+      // 空のタブならそのタブに開く
+      editor.value = text;
+      filenameInput.value = f.name;
+      cur.content = text;
+      cur.name = f.name;
+      updateCount();
+      if (app.classList.contains('preview')) updatePreview();
+      renderTabs();
+      persist();
+    } else {
+      // 編集中のタブがあれば新しいタブに開く
+      addDoc(f.name, text);
+    }
+    fileInput.value = '';
+    flash('「' + f.name + '」を開きました');
+  });
+
+  function getName() {
+    let n = (filenameInput.value || '').trim() || 'article.html';
+    if (!/\.[A-Za-z0-9]+$/.test(n)) n += '.html';
+    return n;
+  }
+  $('btnSave').addEventListener('click', () => {
+    const blob = new Blob([editor.value], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = getName();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    flash('ダウンロードしました');
+  });
+
+  // 全文コピー（CMS等への貼り付け用）
+  $('btnCopy').addEventListener('click', async () => {
+    const t = editor.value;
+    let done = false;
+    try { await navigator.clipboard.writeText(t); done = true; } catch (_) {}
+    if (!done) {
+      const s = editor.selectionStart, e = editor.selectionEnd;
+      editor.focus();
+      editor.select();
+      try { done = document.execCommand('copy'); } catch (_) {}
+      editor.setSelectionRange(s, e);
+    }
+    flash(done ? '全文をコピーしました' : 'コピーできませんでした');
+  });
+
+  // 共有（iPadの共有シート → ファイルに保存 / AirDrop）
+  let canShareFiles = false;
+  try {
+    canShareFiles = !!(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.html', { type: 'text/html' })] }));
+  } catch (_) {}
+  if (!canShareFiles) btnShare.hidden = true;
+  btnShare.addEventListener('click', async () => {
+    const f = new File([editor.value], getName(), { type: 'text/html' });
+    try { await navigator.share({ files: [f] }); } catch (_) {}
+  });
+
+  // ── 検索・置換 ──
+  const searchInput = $('searchInput'), replaceInput = $('replaceInput'),
+        matchCountEl = $('matchCount'), btnCase = $('btnCase');
+  let caseSensitive = false;
+  let mirror = null;
+
+  function norm(s) { return caseSensitive ? s : s.toLowerCase(); }
+
+  function allMatches() {
+    const q = searchInput.value;
+    if (!q) return [];
+    const hay = norm(editor.value), needle = norm(q);
+    const out = [];
+    let i = 0;
+    while ((i = hay.indexOf(needle, i)) !== -1) { out.push(i); i += needle.length; }
+    return out;
+  }
+
+  function updateMatchCount(current) {
+    if (!searchInput.value) { matchCountEl.textContent = ''; return; }
+    const m = allMatches();
+    matchCountEl.textContent = current != null && m.length
+      ? (current + 1) + '/' + m.length
+      : m.length + '件';
+  }
+
+  // テキストエリア内の指定位置が見えるようスクロール（同じ組版のミラー要素で高さを測る）
+  function scrollToPos(pos) {
+    if (!mirror) {
+      mirror = document.createElement('div');
+      document.body.appendChild(mirror);
+    }
+    const cs = getComputedStyle(editor);
+    mirror.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;box-sizing:border-box;'
+      + 'white-space:pre-wrap;overflow-wrap:break-word;'
+      + 'width:' + editor.clientWidth + 'px;'
+      + 'padding:' + cs.paddingTop + ' ' + cs.paddingRight + ' 0 ' + cs.paddingLeft + ';'
+      + 'font-family:' + cs.fontFamily + ';font-size:' + cs.fontSize + ';line-height:' + cs.lineHeight + ';';
+    mirror.textContent = editor.value.slice(0, pos);
+    const marker = document.createElement('span');
+    marker.textContent = '​';
+    mirror.appendChild(marker);
+    editor.scrollTop = Math.max(0, marker.offsetTop - editor.clientHeight * 0.3);
+    mirror.textContent = '';
+  }
+
+  function gotoMatch(dir) {
+    const q = searchInput.value;
+    const m = allMatches();
+    if (!q || !m.length) { updateMatchCount(); return false; }
+    let idx;
+    if (dir > 0) {
+      idx = m.findIndex(i => i >= editor.selectionEnd);
+      if (idx === -1) idx = 0;
+    } else {
+      const before = m.filter(i => i < editor.selectionStart);
+      idx = before.length ? m.indexOf(before[before.length - 1]) : m.length - 1;
+    }
+    const pos = m[idx];
+    editor.setSelectionRange(pos, pos + q.length);
+    scrollToPos(pos);
+    editor.focus();
+    updateMatchCount(idx);
+    return true;
+  }
+
+  function openSearch() {
+    const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+    if (sel && sel.length <= 100 && !sel.includes('\n')) searchInput.value = sel;
+    app.classList.add('search');
+    searchBtn.classList.add('active');
+    updateMatchCount();
+    searchInput.focus();
+    searchInput.select();
+  }
+  function closeSearch() {
+    app.classList.remove('search');
+    searchBtn.classList.remove('active');
+    editor.focus();
+  }
+
+  function doReplace() {
+    const q = searchInput.value;
+    if (!q) return;
+    const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+    if (sel.length === q.length && norm(sel) === norm(q)) {
+      const r = replaceInput.value;
+      insert(r, r.length, r.length);
+    }
+    gotoMatch(1);
+  }
+
+  function doReplaceAll() {
+    const q = searchInput.value;
+    if (!q) return;
+    const m = allMatches();
+    if (!m.length) { flash('見つかりませんでした'); return; }
+    const r = replaceInput.value, v = editor.value;
+    let out = '', last = 0;
+    for (const i of m) { out += v.slice(last, i) + r; last = i + q.length; }
+    out += v.slice(last);
+    const st = editor.scrollTop;
+    editor.focus();
+    editor.setSelectionRange(0, v.length);
+    insert(out, 0, 0);
+    editor.scrollTop = st;
+    updateMatchCount();
+    flash(m.length + '件置換しました');
+  }
+
+  searchInput.addEventListener('input', () => updateMatchCount());
+  searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); gotoMatch(e.shiftKey ? -1 : 1); }
+  });
+  replaceInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doReplace(); }
+  });
+  btnCase.addEventListener('click', () => {
+    caseSensitive = !caseSensitive;
+    btnCase.classList.toggle('active', caseSensitive);
+    btnCase.setAttribute('aria-pressed', String(caseSensitive));
+    updateMatchCount();
+  });
+  $('btnPrev').addEventListener('click', () => gotoMatch(-1));
+  $('btnNext').addEventListener('click', () => gotoMatch(1));
+  $('btnCloseSearch').addEventListener('click', closeSearch);
+  $('btnReplace').addEventListener('click', doReplace);
+  $('btnReplaceAll').addEventListener('click', doReplaceAll);
+  // 次へ／置換を連打してもエディタ内の選択が見えたままになるよう、フォーカス移動を止める
+  $('searchbar').addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+
+  // ── ハードウェアキーボード（Magic Keyboard等）──
+  const byLabel = l => TAG_BUTTONS.find(b => b.label === l);
+  editor.addEventListener('keydown', e => {
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      insert('  ', 2, 2);
+      return;
+    }
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === 's')      { e.preventDefault(); $('btnSave').click(); }
+    else if (k === 'b') { e.preventDefault(); applyTag(byLabel('strong')); }
+    else if (k === 'i') { e.preventDefault(); applyTag(byLabel('em')); }
+    else if (k === 'k') { e.preventDefault(); applyTag(byLabel('a')); }
+  });
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      openSearch();
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (app.classList.contains('search')) closeSearch();
+      else if (app.classList.contains('preview')) btnPreview.click();
+    }
+  });
+
+  // ── 起動時：前回の内容を復元 ──
+  (function init() {
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (_) {}
+    if (!data) {
+      // 旧バージョン（1ファイル形式）の下書きを引き継ぐ
+      let v1 = null;
+      try { v1 = JSON.parse(localStorage.getItem(KEY_V1) || 'null'); } catch (_) {}
+      if (v1 && v1.content) {
+        data = { v: 2, active: 0, docs: [{ name: v1.name || 'article.html', content: v1.content }] };
+        try { localStorage.removeItem(KEY_V1); } catch (_) {}
+      }
+    }
+    if (data && Array.isArray(data.docs) && data.docs.length) {
+      for (const d of data.docs) addDoc(d.name || 'article.html', d.content || '', false);
+      const idx = Math.min(Math.max(data.active | 0, 0), docs.length - 1);
+      switchTo(docs[idx].id);
+      flash('前回の内容を復元しました');
+    } else {
+      addDoc('article.html', SAMPLE);
+    }
+    updateCount();
+  })();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+}
+</script>
+</body>
+</html>
