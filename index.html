@@ -265,7 +265,7 @@
   }
 
   /* ── 編集面とプレビュー ── */
-  #main { flex: 1; min-height: 0; display: flex; }
+  #main { flex: 1; min-height: 0; display: flex; position: relative; }
   #editor {
     flex: 1;
     min-width: 0;
@@ -295,6 +295,102 @@
     #app.preview #editor { border-right: 1px solid var(--border); }
   }
 
+  /* ── 見出しアウトライン ── */
+  #outline { position: absolute; inset: 0; z-index: 5; display: flex; }
+  #outline[hidden] { display: none; }
+  #outlinePanel {
+    width: min(320px, 85%);
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 8px;
+    box-shadow: 4px 0 24px rgba(23, 34, 46, 0.12);
+  }
+  #outlineBackdrop { flex: 1; background: rgba(23, 34, 46, 0.2); }
+  .ol-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ol-item:active { background: var(--panel-press); }
+  .ol-item .lv {
+    flex: none;
+    width: 22px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    color: var(--accent);
+  }
+  .ol-h2 { font-weight: 600; }
+  .ol-h3 { padding-left: 28px; }
+  .ol-h4 { padding-left: 46px; font-size: 14px; color: var(--muted); }
+  .ol-empty { padding: 16px 12px; color: var(--muted); font-size: 13px; }
+
+  /* ── 公開前チェック ── */
+  #lint {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 14px;
+    background: rgba(23, 34, 46, 0.25);
+  }
+  #lint[hidden] { display: none; }
+  #lintCard {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: min(560px, 100%);
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 40px rgba(23, 34, 46, 0.2);
+  }
+  #lintHead {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 10px 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  #lintCount { color: var(--muted); font-weight: 400; font-size: 13px; }
+  #btnCloseLint { border: none; box-shadow: none; background: transparent; min-width: 44px; font-size: 18px; }
+  #lintBody { overflow-y: auto; padding: 8px; }
+  .lint-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .lint-item[data-jump] { cursor: pointer; }
+  .lint-item[data-jump]:active { background: var(--panel-press); }
+  .lint-badge {
+    flex: none;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+  }
+  .lint-warn .lint-badge { color: #B45309; }
+  .lint-info .lint-badge { color: var(--muted); }
+  .lint-ok { padding: 20px 16px; color: var(--accent); font-weight: 600; font-size: 15px; }
+  @media (prefers-color-scheme: dark) {
+    .lint-warn .lint-badge { color: #F0A954; }
+  }
+
   /* ── ステータスバー ── */
   footer {
     flex: none;
@@ -321,6 +417,7 @@
       <button type="button" id="btnSave">保存</button>
       <button type="button" id="btnShare">共有</button>
       <button type="button" id="btnCopy">コピー</button>
+      <button type="button" id="btnLint">チェック</button>
       <button type="button" id="btnPreview">プレビュー</button>
     </div>
   </header>
@@ -350,6 +447,21 @@
   <main id="main">
     <textarea id="editor" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="HTMLソース" placeholder="ここにHTMLを入力…"></textarea>
     <iframe id="preview" sandbox title="プレビュー"></iframe>
+
+    <div id="outline" hidden>
+      <div id="outlinePanel" role="navigation" aria-label="見出し一覧"><div id="outlineList"></div></div>
+      <div id="outlineBackdrop"></div>
+    </div>
+
+    <div id="lint" hidden>
+      <div id="lintCard">
+        <div id="lintHead">
+          <span>公開前チェック<span id="lintCount"></span></span>
+          <button type="button" id="btnCloseLint" aria-label="閉じる">×</button>
+        </div>
+        <div id="lintBody"></div>
+      </div>
+    </div>
   </main>
 
   <footer>
@@ -480,7 +592,12 @@
   searchBtn.addEventListener('click', () => {
     app.classList.contains('search') ? closeSearch() : openSearch();
   });
-  toolbar.append(undoBtn, redoBtn, searchBtn, divider());
+  const outlineBtn = mkBtn('目次');
+  outlineBtn.setAttribute('aria-label', '見出し一覧');
+  outlineBtn.addEventListener('click', () => {
+    outlineEl.hidden ? openOutline() : closeOutline();
+  });
+  toolbar.append(undoBtn, redoBtn, searchBtn, outlineBtn, divider());
   for (const b of TAG_BUTTONS) {
     if (b.sep) { toolbar.append(divider()); continue; }
     const el = mkBtn(b.label);
@@ -659,8 +776,15 @@
   });
 
   function updateCount() {
-    countEl.textContent = '文字数 ' + editor.value.length.toLocaleString('ja-JP');
+    const v = editor.value;
+    const body = v.replace(/<[^>]*>/g, '').replace(/\n/g, '');
+    let s = '本文 ' + body.length.toLocaleString('ja-JP') + '字 / 全体 ' + v.length.toLocaleString('ja-JP') + '字';
+    const selLen = editor.selectionEnd - editor.selectionStart;
+    if (selLen > 0) s = '選択 ' + selLen.toLocaleString('ja-JP') + '字 ・ ' + s;
+    countEl.textContent = s;
   }
+  // 選択範囲の文字数をリアルタイムに反映
+  ['select', 'keyup', 'mouseup', 'touchend'].forEach(ev => editor.addEventListener(ev, updateCount));
   function persist() {
     try {
       saveActive();
@@ -877,6 +1001,163 @@
   // 次へ／置換を連打してもエディタ内の選択が見えたままになるよう、フォーカス移動を止める
   $('searchbar').addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
 
+  // ── 見出しアウトライン ──
+  const outlineEl = $('outline'), outlineList = $('outlineList');
+
+  function jumpTo(start, end) {
+    // プレビュー全画面表示中ならエディタに戻してからジャンプ
+    if (getComputedStyle(editor).display === 'none') btnPreview.click();
+    editor.setSelectionRange(start, end);
+    scrollToPos(start);
+    editor.focus();
+  }
+
+  function buildOutline() {
+    outlineList.textContent = '';
+    const re = /<(h[2-4])\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    const v = editor.value;
+    let m, count = 0;
+    while ((m = re.exec(v)) !== null) {
+      const lv = m[1].toLowerCase();
+      const text = m[2].replace(/<[^>]*>/g, '').trim() || '(空の見出し)';
+      const item = document.createElement('div');
+      item.className = 'ol-item ol-' + lv;
+      const tag = document.createElement('span');
+      tag.className = 'lv';
+      tag.textContent = lv;
+      const label = document.createElement('span');
+      label.textContent = text;
+      item.append(tag, label);
+      const pos = m.index;
+      item.addEventListener('click', () => { closeOutline(); jumpTo(pos, pos); });
+      outlineList.appendChild(item);
+      count++;
+    }
+    if (!count) {
+      const e = document.createElement('div');
+      e.className = 'ol-empty';
+      e.textContent = 'h2〜h4 の見出しが見つかりません';
+      outlineList.appendChild(e);
+    }
+  }
+  function openOutline() { buildOutline(); outlineEl.hidden = false; outlineBtn.classList.add('active'); }
+  function closeOutline() { outlineEl.hidden = true; outlineBtn.classList.remove('active'); }
+  $('outlineBackdrop').addEventListener('click', closeOutline);
+
+  // ── 公開前チェック ──
+  const lintEl = $('lint'), lintBody = $('lintBody'), lintCountEl = $('lintCount');
+  const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+
+  function runLint() {
+    const v = editor.value;
+    const out = [];
+    const push = (level, msg, start, end) => out.push({ level, msg, start, end });
+
+    // タグ走査(コメントはスキップ)
+    const tagRe = /<!--[\s\S]*?-->|<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
+    const stack = [];
+    const headings = [];
+    let m;
+    while ((m = tagRe.exec(v)) !== null) {
+      if (m[0].startsWith('<!--')) continue;
+      const raw = m[0], tag = m[1].toLowerCase(), attrs = m[2] || '';
+      const isClose = raw[1] === '/';
+      const start = m.index, end = m.index + raw.length;
+      if (!isClose) {
+        if (tag === 'img') {
+          if (!/\balt\s*=/i.test(attrs)) push('warn', '<img> に alt がありません', start, end);
+          else if (/\balt\s*=\s*(""|'')/.test(attrs)) push('info', '<img> の alt が空です（装飾画像なら問題なし）', start, end);
+          if (!/\bsrc\s*=/i.test(attrs) || /\bsrc\s*=\s*(""|'')/.test(attrs)) push('warn', '<img> の src が空です', start, end);
+        }
+        if (tag === 'a') {
+          if (/\bhref\s*=\s*(""|'')/.test(attrs)) push('warn', '<a> の href が空です', start, end);
+          if (/\btarget\s*=\s*["']?_blank/i.test(attrs) && !/\brel\s*=\s*["'][^"']*(noopener|noreferrer)/i.test(attrs)) {
+            push('warn', 'target="_blank" に rel="noopener" がありません', start, end);
+          }
+        }
+        if (/^h[1-6]$/.test(tag)) headings.push({ lv: +tag[1], start, end });
+        if (VOID_TAGS.has(tag) || /\/\s*>$/.test(raw)) continue;
+        stack.push({ tag, start, end });
+      } else {
+        if (VOID_TAGS.has(tag)) { push('warn', '</' + tag + '> は不要です（閉じタグを持たない要素）', start, end); continue; }
+        const top = stack[stack.length - 1];
+        if (top && top.tag === tag) { stack.pop(); continue; }
+        const idx = stack.map(s => s.tag).lastIndexOf(tag);
+        if (idx === -1) {
+          push('warn', '対応する開始タグのない </' + tag + '> があります', start, end);
+        } else {
+          for (let i = stack.length - 1; i > idx; i--) {
+            push('warn', '<' + stack[i].tag + '> が閉じられていません', stack[i].start, stack[i].end);
+          }
+          stack.length = idx;
+        }
+      }
+    }
+    for (const s of stack) push('warn', '<' + s.tag + '> が閉じられていません', s.start, s.end);
+
+    // 見出し階層
+    let prev = null;
+    for (const h of headings) {
+      if (h.lv === 1) push('info', '本文に <h1> があります（記事ではタイトル側が h1 になるのが一般的）', h.start, h.end);
+      else if (prev === null && h.lv > 2) push('info', '最初の見出しが h' + h.lv + ' です（h2 始まりが一般的）', h.start, h.end);
+      if (prev !== null && h.lv > prev + 1) push('warn', '見出しレベルが飛んでいます（h' + prev + ' → h' + h.lv + '）', h.start, h.end);
+      prev = h.lv;
+    }
+
+    // 事故になりやすい文字の混入
+    const badChars = [
+      [/[“”]/g, 'スマート引用符「“ ”」'],
+      [/[‘’]/g, 'スマート引用符「‘ ’」'],
+      [/　/g, '全角スペース'],
+    ];
+    for (const [re2, label] of badChars) {
+      let c;
+      while ((c = re2.exec(v)) !== null && out.length < 300) {
+        push('warn', label + ' が混入しています', c.index, c.index + 1);
+      }
+    }
+
+    out.sort((a, b) => a.start - b.start);
+    return out;
+  }
+
+  function openLint() {
+    const items = runLint();
+    lintBody.textContent = '';
+    lintCountEl.textContent = items.length ? '　' + items.length + '件' : '';
+    if (!items.length) {
+      const ok = document.createElement('div');
+      ok.className = 'lint-ok';
+      ok.textContent = '✓ 問題は見つかりませんでした';
+      lintBody.appendChild(ok);
+    } else {
+      for (const it of items.slice(0, 100)) {
+        const row = document.createElement('div');
+        row.className = 'lint-item lint-' + it.level;
+        row.setAttribute('data-jump', '1');
+        const badge = document.createElement('span');
+        badge.className = 'lint-badge';
+        badge.textContent = it.level === 'warn' ? '注意' : '情報';
+        const msg = document.createElement('span');
+        msg.textContent = it.msg;
+        row.append(badge, msg);
+        row.addEventListener('click', () => { closeLint(); jumpTo(it.start, it.end); });
+        lintBody.appendChild(row);
+      }
+      if (items.length > 100) {
+        const more = document.createElement('div');
+        more.className = 'ol-empty';
+        more.textContent = '…ほか ' + (items.length - 100) + ' 件';
+        lintBody.appendChild(more);
+      }
+    }
+    lintEl.hidden = false;
+  }
+  function closeLint() { lintEl.hidden = true; }
+  $('btnLint').addEventListener('click', openLint);
+  $('btnCloseLint').addEventListener('click', closeLint);
+  lintEl.addEventListener('click', e => { if (e.target === lintEl) closeLint(); });
+
   // ── ハードウェアキーボード（Magic Keyboard等）──
   const byLabel = l => TAG_BUTTONS.find(b => b.label === l);
   editor.addEventListener('keydown', e => {
@@ -899,7 +1180,9 @@
       return;
     }
     if (e.key === 'Escape') {
-      if (app.classList.contains('search')) closeSearch();
+      if (!lintEl.hidden) closeLint();
+      else if (!outlineEl.hidden) closeOutline();
+      else if (app.classList.contains('search')) closeSearch();
       else if (app.classList.contains('preview')) btnPreview.click();
     }
   });

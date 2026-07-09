@@ -1,6 +1,6 @@
 // ネットワーク優先+キャッシュフォールバック(オフライン対応)。
 // 更新はmainへpushするだけ(オンライン時は常に最新を取得)。VERSIONは古いキャッシュの掃除用。
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const CACHE = 'html-editor-' + VERSION;
 const ASSETS = [
   './',
