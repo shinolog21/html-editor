@@ -1147,12 +1147,88 @@
   const lintEl = $('lint'), lintBody = $('lintBody'), lintCountEl = $('lintCount');
   const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 
+  // ═══ 文章・表記ルール辞書 ═══
+  // profiles を指定すると該当プロファイル選択時のみ発動(省略=常時)。
+  // TEXT_RULES はタグを除いた本文テキストに、HTML_RULES はソース全体に適用。
+  const TEXT_RULES = [
+    // 誤字・誤用
+    { re: /うる覚え/g, msg: '「うる覚え」→「うろ覚え」', level: 'warn' },
+    { re: /シュミレーション/g, msg: '「シュミレーション」→「シミュレーション」', level: 'warn' },
+    { re: /コミニュケーション/g, msg: '「コミニュケーション」→「コミュニケーション」', level: 'warn' },
+    { re: /永遠と/g, msg: '「永遠と」→「延々と」の誤用の可能性', level: 'warn' },
+    { re: /こんにちわ/g, msg: '「こんにちわ」→「こんにちは」', level: 'warn' },
+    { re: /こんばんわ/g, msg: '「こんばんわ」→「こんばんは」', level: 'warn' },
+    { re: /づつ/g, msg: '「づつ」→「ずつ」(現代仮名遣い)', level: 'warn' },
+    { re: /一番最初/g, msg: '「一番最初」→「最初」(重言)', level: 'info' },
+    { re: /一番最後/g, msg: '「一番最後」→「最後」(重言)', level: 'info' },
+    { re: /的を得/g, msg: '「的を得る」→「的を射る」が一般的(諸説あり)', level: 'info' },
+    // ら抜き・い抜き
+    { re: /(見|食べ|来|出|寝|起き|着|信じ|感じ|覚え|考え|調べ)れ(る|ます|ない)/g, msg: 'ら抜き言葉の可能性(例:見れる→見られる)', level: 'warn' },
+    { re: /(って|んで|して)(る|ます|ない)/g, msg: 'い抜き言葉の可能性(例:してる→している)', level: 'info' },
+    // 冗長表現
+    { re: /することができ(ま|る)/g, msg: '冗長表現:「することができる」→「できる」', level: 'info' },
+    { re: /という形にな/g, msg: '冗長表現:「という形になる」→ 言い切る', level: 'info' },
+    { re: /する必要があり/g, msg: '冗長表現:「する必要があります」→「してください」等', level: 'info' },
+    { re: /ことが可能で/g, msg: '冗長表現:「ことが可能です」→「できます」', level: 'info' },
+    // 表記(共通)
+    { re: /[０-９ａ-ｚＡ-Ｚ]+/g, msg: '全角英数字は半角に', level: 'warn' },
+    { re: /(?<![\d,.])\d{4,}(?=円)/g, msg: '4桁以上の金額はカンマ区切りに(例:4,980円)', level: 'info' },
+    { re: /[“”]/g, msg: 'スマート引用符「“ ”」が混入しています', level: 'warn' },
+    { re: /[‘’]/g, msg: 'スマート引用符「‘ ’」が混入しています', level: 'warn' },
+    { re: /　/g, msg: '全角スペースが混入しています', level: 'warn' },
+    { re: /をを|でで|(?<!も)のの/g, msg: '助詞の重複(タイプミス)の可能性', level: 'info' },
+    // SUUTA: ひらく漢字・表記ルール
+    { re: /(?<=[るたいうなの])事(?![件項情態故業務例柄実前後])/g, msg: '[SUUTA] 「事」→「こと」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /下さい/g, msg: '[SUUTA] 「下さい」→「ください」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /出来(?!事)/g, msg: '[SUUTA] 「出来る」→「できる」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /是非/g, msg: '[SUUTA] 「是非」→「ぜひ」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /(?<!変)更に/g, msg: '[SUUTA] 「更に」→「さらに」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /有り(?!様)|有る/g, msg: '[SUUTA] 「有る」→「ある」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /良い|良かっ/g, msg: '[SUUTA] 「良い」→「よい」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /(?<=[るた])時(?![間期代刻限点差短計])/g, msg: '[SUUTA] 「〜する時」→「〜するとき」(ひらく)', level: 'warn', profiles: ['suuta'] },
+    { re: /[ヶケ]月|箇月/g, msg: '[SUUTA] 「ヶ月」→「か月」', level: 'info', profiles: ['suuta'] },
+    { re: /センチ(?!メンタル)|メートル/g, msg: '[SUUTA] 単位は記号表記に(10センチ→10cm)', level: 'info', profiles: ['suuta'] },
+    { re: /[!?]/g, msg: '[SUUTA] 感嘆符・疑問符は全角(！？)に', level: 'info', profiles: ['suuta'] },
+    { re: /[①-⓿㈠-㋿㌀-㏿]/g, msg: '[SUUTA] 機種依存文字(①㎝等)は使用不可', level: 'warn', profiles: ['suuta'] },
+    { re: /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}⭐❤]/gu, msg: '[SUUTA] 絵文字は使用不可', level: 'warn', profiles: ['suuta'] },
+    // 文体(両媒体とも「です・ます」統一)
+    { re: /(だった|であった|である|だ)。/g, msg: '文末は「です・ます」調に(会話文・引用はOK)', level: 'warn', profiles: ['suuta', 'hameefun'] },
+  ];
+
+  const HTML_RULES = [
+    { re: /<(strong|b)\b/gi, msg: '[HameeFun] <strong>は禁止(強調はspan.lineのみ)', level: 'warn', profiles: ['hameefun'] },
+    { re: /<(em|i|u)\b[^>]*>/gi, msg: '装飾タグ(斜体・下線)は使用不可', level: 'warn', profiles: ['suuta', 'hameefun'] },
+    { re: /<h[56]\b/gi, msg: '[HameeFun] 見出しはh2〜h4のみ(h5以下不可)', level: 'warn', profiles: ['hameefun'] },
+    { re: /<h[456]\b/gi, msg: '[SUUTA] 見出しはH2・H3のみ(H4以下不可)', level: 'warn', profiles: ['suuta'] },
+    { re: /<h[234](?![^>]*headline_marker)[^>]*>/gi, msg: '[HameeFun] 見出しに class="headline_marker" が必要', level: 'warn', profiles: ['hameefun'] },
+    { re: /<h[1-6][^>]*\bid\s*=/gi, msg: '[HameeFun] 見出しにid属性は付与しない', level: 'warn', profiles: ['hameefun'] },
+    { re: /href\s*=\s*["']#/gi, msg: '[HameeFun] ページ内リンク(href="#〜")は禁止', level: 'warn', profiles: ['hameefun'] },
+    { re: /<span[^>]*style\s*=\s*["'][^"']*font-weight/gi, msg: 'コピペ由来の不要タグ(<span style="font-weight:…">)の可能性', level: 'info' },
+    { re: /style\s*=\s*["'][^"']*(?:color|background|border|font-)/gi, msg: '独自装飾(色・枠線・フォント指定)は禁止', level: 'warn', profiles: ['suuta', 'hameefun'] },
+    { re: /<a\b(?=[^>]*(?:valuecommerce|accesstrade|trafficgate|link-ag))(?![^>]*nofollow)[^>]*>/gi, msg: '[HameeFun] アフィリエイトリンクに rel="nofollow" がありません', level: 'warn', profiles: ['hameefun'] },
+    { re: /<a\b(?=[^>]*target\s*=\s*["']?_blank)(?![^>]*aria-describedby)[^>]*>/gi, msg: '[HameeFun] 外部リンクに aria-describedby="a11y-new-window-message" を付与', level: 'info', profiles: ['hameefun'] },
+  ];
+
+  // タグを除いた本文テキストと、テキスト位置→ソース位置の対応表
+  function buildTextView(v) {
+    const chars = [], map = [];
+    const re = /<!--[\s\S]*?-->|<[^>]*>/g;
+    let last = 0, m;
+    while ((m = re.exec(v)) !== null) {
+      for (let i = last; i < m.index; i++) { chars.push(v[i]); map.push(i); }
+      last = m.index + m[0].length;
+    }
+    for (let i = last; i < v.length; i++) { chars.push(v[i]); map.push(i); }
+    return { text: chars.join(''), map };
+  }
+
   function runLint() {
     const v = editor.value;
+    const pid = (activeDoc() && activeDoc().profile) || 'all';
     const out = [];
-    const push = (level, msg, start, end) => out.push({ level, msg, start, end });
+    const push = (level, msg, start, end) => { if (out.length < 300) out.push({ level, msg, start, end }); };
 
-    // タグ走査(コメントはスキップ)
+    // ── HTML構造チェック(タグ走査・コメントはスキップ) ──
     const tagRe = /<!--[\s\S]*?-->|<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
     const stack = [];
     const headings = [];
@@ -1203,16 +1279,119 @@
       prev = h.lv;
     }
 
-    // 事故になりやすい文字の混入
-    const badChars = [
-      [/[“”]/g, 'スマート引用符「“ ”」'],
-      [/[‘’]/g, 'スマート引用符「‘ ’」'],
-      [/　/g, '全角スペース'],
-    ];
-    for (const [re2, label] of badChars) {
+    // 見出し直下に本文がない(見出しが連続)
+    const hhre = /<\/(h[1-6])>\s*<(h[1-6])\b/gi;
+    while ((m = hhre.exec(v)) !== null) {
+      push('info', '見出しの直下に本文がありません(' + m[1] + '→' + m[2] + ')', m.index, m.index + m[0].length);
+    }
+
+    // ── 文章・表記ルール ──
+    const tv = buildTextView(v);
+    for (const r of TEXT_RULES) {
+      if (r.profiles && !r.profiles.includes(pid)) continue;
+      r.re.lastIndex = 0;
       let c;
-      while ((c = re2.exec(v)) !== null && out.length < 300) {
-        push('warn', label + ' が混入しています', c.index, c.index + 1);
+      while ((c = r.re.exec(tv.text)) !== null && out.length < 300) {
+        push(r.level, r.msg, tv.map[c.index], tv.map[c.index + c[0].length - 1] + 1);
+        if (c[0].length === 0) r.re.lastIndex++;
+      }
+    }
+    for (const r of HTML_RULES) {
+      if (r.profiles && !r.profiles.includes(pid)) continue;
+      r.re.lastIndex = 0;
+      let c;
+      while ((c = r.re.exec(v)) !== null && out.length < 300) {
+        push(r.level, r.msg, c.index, c.index + c[0].length);
+        if (c[0].length === 0) r.re.lastIndex++;
+      }
+    }
+
+    // ── 文単位チェック(長文・語尾・文体混在) ──
+    const sentences = [];
+    {
+      let s = 0;
+      for (let i = 0; i < tv.text.length; i++) {
+        const ch = tv.text[i];
+        if (ch === '。' || ch === '！' || ch === '？' || ch === '\n') {
+          const seg = tv.text.slice(s, i).trim();
+          if (seg && ch !== '\n') sentences.push({ start: s, end: i + 1, seg });
+          s = i + 1;
+        }
+      }
+    }
+    for (const st of sentences) {
+      if (st.seg.length > 120) push('info', '一文が長すぎます(' + st.seg.length + '字)。分割を検討', tv.map[st.start], tv.map[st.end - 1] + 1);
+    }
+    const endOf = seg => { const mm = seg.match(/(でしょう|ましょう|ください|でした|ました|です|ます)$/); return mm ? mm[1] : null; };
+    let run = 1;
+    for (let i = 1; i < sentences.length; i++) {
+      const a = endOf(sentences[i - 1].seg), b = endOf(sentences[i].seg);
+      if (a && b && a === b) {
+        run++;
+        if (run === 3) push('info', '同じ語尾「' + b + '」が3文連続しています。リズムに変化を', tv.map[sentences[i].start], tv.map[sentences[i].end - 1] + 1);
+      } else run = 1;
+    }
+    const desuCnt = sentences.filter(x => /(です|ます|でしょう|ました|でした|ません)$/.test(x.seg)).length;
+    const daCnt = sentences.filter(x => /(である|だ|だった)$/.test(x.seg)).length;
+    if (desuCnt >= 2 && daCnt >= 2) {
+      push('info', '文体が混在しています(です・ます ' + desuCnt + '文 / だ・である ' + daCnt + '文)', 0, 1);
+    }
+
+    // ── HameeFun 固有チェック ──
+    if (pid === 'hameefun') {
+      const tableRanges = [];
+      const tre = /<table\b[\s\S]*?<\/table>/gi;
+      while ((m = tre.exec(v)) !== null) tableRanges.push([m.index, m.index + m[0].length]);
+      const bre = /<br\s*\/?\s*>/gi;
+      while ((m = bre.exec(v)) !== null) {
+        const p = m.index;
+        if (!tableRanges.some(r => p >= r[0] && p < r[1])) {
+          push('warn', '[HameeFun] <br>改行は禁止(段落は<p>で分ける。表内のみOK)', p, p + m[0].length);
+        }
+      }
+      const lre = /<li\b[^>]*>([\s\S]*?)<\/li>/gi;
+      while ((m = lre.exec(v)) !== null) {
+        const inner = m[1].replace(/<[^>]*>/g, '').trim();
+        if (/(。|です|ます)$/.test(inner)) push('warn', '[HameeFun] リストは体言止め・句点なしに統一', m.index, m.index + m[0].length);
+      }
+      const pre = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+      while ((m = pre.exec(v)) !== null) {
+        const innerText = m[1].replace(/<[^>]*>/g, '');
+        const cnt = (innerText.match(/[。！？]/g) || []).length;
+        if (cnt >= 2) push('info', '[HameeFun] 1文ごとに<p>で区切る(この段落は' + cnt + '文)', m.index, m.index + m[0].length);
+        const lines = (m[1].match(/class="line"/g) || []).length;
+        if (lines >= 3) push('info', '[HameeFun] span.lineの多用(1段落1箇所程度が目安)', m.index, m.index + m[0].length);
+      }
+      const hre = /<h[2-4][^>]*>[\s\S]*?<\/h[2-4]>/gi;
+      while ((m = hre.exec(v)) !== null) {
+        const openEnd = m[0].indexOf('>') + 1;
+        const inner = m[0].slice(openEnd, m[0].lastIndexOf('<'));
+        const amp = inner.match(/&(?!(amp|lt|gt|quot|#\w+);)/);
+        if (amp) push('warn', '[HameeFun] 見出し内の「&」は「&amp;」に(本文が消えるバグの原因)', m.index + openEnd + amp.index, m.index + openEnd + amp.index + 1);
+      }
+      const sre = /<h2[^>]*>\s*まとめ\s*<\/h2>/gi;
+      while ((m = sre.exec(v)) !== null) {
+        push('info', '[HameeFun] 最後のh2は「まとめ」のみでなく内容に合った見出しに', m.index, m.index + m[0].length);
+      }
+      const excl = (tv.text.match(/！/g) || []).length;
+      if (excl >= 5) push('info', '[HameeFun] 感嘆符「！」の多用に注意(' + excl + '箇所)', 0, 1);
+      const ire = /<img\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>/gi;
+      while ((m = ire.exec(v)) !== null) {
+        const base = (m[1].split('/').pop() || '').split('?')[0];
+        if (/_/.test(base)) push('info', '[HameeFun] 画像ファイル名は「-」推奨(「_」不可): ' + base.slice(0, 40), m.index, m.index + m[0].length);
+      }
+    }
+
+    // ── SUUTA 固有チェック ──
+    if (pid === 'suuta') {
+      const pre = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+      while ((m = pre.exec(v)) !== null) {
+        const cnt = ((m[1].replace(/<[^>]*>/g, '').match(/[。！？]/g)) || []).length;
+        if (cnt >= 3) push('info', '[SUUTA] 一文ごとの改段落を推奨(この段落は' + cnt + '文)', m.index, m.index + m[0].length);
+      }
+      const hsre = /<h[23][^>]*>[\s\S]*?<(strong|b)\b[\s\S]*?<\/h[23]>/gi;
+      while ((m = hsre.exec(v)) !== null) {
+        push('warn', '[SUUTA] 見出し内に太字タグを入れない', m.index, Math.min(m.index + 30, m.index + m[0].length));
       }
     }
 
@@ -1223,7 +1402,8 @@
   function openLint() {
     const items = runLint();
     lintBody.textContent = '';
-    lintCountEl.textContent = items.length ? '　' + items.length + '件' : '';
+    const pname = (PROFILES.find(p => p.id === ((activeDoc() && activeDoc().profile) || 'all')) || PROFILES[0]).name;
+    lintCountEl.textContent = '　' + pname + '基準' + (items.length ? ' / ' + items.length + '件' : '');
     if (!items.length) {
       const ok = document.createElement('div');
       ok.className = 'lint-ok';
