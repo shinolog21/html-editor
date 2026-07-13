@@ -215,6 +215,32 @@
   }
   #toolbar button.tag::before { content: "<"; color: var(--muted); }
   #toolbar button.tag::after { content: ">"; color: var(--muted); }
+  #toolbar button[hidden] { display: none !important; }
+  .selwrap { position: relative; flex: none; }
+  .selwrap::after {
+    content: "▾";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  #profileSel {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--accent);
+    border-radius: 9px;
+    min-height: 44px;
+    padding: 0 26px 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    box-shadow: var(--shadow);
+  }
   .divider {
     flex: none;
     width: 1px;
@@ -448,7 +474,7 @@
       <div id="outlineList"></div>
     </div>
     <textarea id="editor" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="HTMLソース" placeholder="ここにHTMLを入力…"></textarea>
-    <iframe id="preview" sandbox title="プレビュー"></iframe>
+    <iframe id="preview" sandbox="allow-same-origin" title="プレビュー"></iframe>
 
     <div id="lint" hidden>
       <div id="lintCard">
@@ -502,6 +528,18 @@
     { label: 'img', before: '<img src="', after: '" alt="">' },
     { label: 'br',  before: '<br>', after: '' },
     { label: 'hr',  before: '<hr>', after: '' },
+  ];
+
+  // ═══════════════════════════════════════════════════════════
+  //  媒体プロファイル ── 修飾タグ(INLINE_TAGS)だけを媒体ごとに絞り込む
+  //  見出し・p・リスト等の構造タグはどのプロファイルでも常に表示。
+  //  新しい媒体は PROFILES に1行追加(tags: 表示するlabelの配列 / null=全部)
+  // ═══════════════════════════════════════════════════════════
+  const INLINE_TAGS = ['strong', 'em', 'a', 'code', 'mark', 'span.line'];
+  const PROFILES = [
+    { id: 'all',      name: '全タグ',   tags: null },
+    { id: 'hameefun', name: 'HameeFun', tags: ['span.line'] },
+    { id: 'suuta',    name: 'SUUTA',    tags: ['mark', 'strong'] },
   ];
 
   const $ = id => document.getElementById(id);
@@ -595,7 +633,25 @@
   outlineBtn.addEventListener('click', () => {
     outlineEl.hidden ? openOutline() : closeOutline();
   });
-  toolbar.append(undoBtn, redoBtn, searchBtn, outlineBtn, divider());
+  const profileSel = document.createElement('select');
+  profileSel.id = 'profileSel';
+  profileSel.setAttribute('aria-label', '媒体プロファイル(修飾タグの絞り込み)');
+  for (const p of PROFILES) {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = p.name;
+    profileSel.appendChild(o);
+  }
+  profileSel.addEventListener('change', () => {
+    const d = activeDoc();
+    if (d) d.profile = profileSel.value;
+    applyProfile(profileSel.value);
+    schedulePersist();
+  });
+  const selWrap = document.createElement('div');
+  selWrap.className = 'selwrap';
+  selWrap.appendChild(profileSel);
+  toolbar.append(undoBtn, redoBtn, searchBtn, outlineBtn, selWrap, divider());
   for (const b of TAG_BUTTONS) {
     if (b.sep) { toolbar.append(divider()); continue; }
     const el = mkBtn(b.label);
@@ -603,8 +659,18 @@
     el.addEventListener('click', () => applyTag(b));
     toolbar.append(el);
   }
-  // ボタンタップでキーボードが閉じないよう、フォーカス移動を止める
-  toolbar.addEventListener('mousedown', e => e.preventDefault());
+  // ボタンタップでキーボードが閉じないよう、フォーカス移動を止める(selectは除外)
+  toolbar.addEventListener('mousedown', e => { if (!e.target.closest('select')) e.preventDefault(); });
+
+  // プロファイルに応じて修飾タグボタンを絞り込む
+  function applyProfile(pid) {
+    const p = PROFILES.find(x => x.id === pid) || PROFILES[0];
+    toolbar.querySelectorAll('button.tag').forEach(btn => {
+      if (!INLINE_TAGS.includes(btn.textContent)) return;
+      btn.hidden = !!(p.tags && !p.tags.includes(btn.textContent));
+    });
+    if (profileSel.value !== p.id) profileSel.value = p.id;
+  }
 
   // ── プレビュー ──
   const PREVIEW_CSS = [
@@ -626,11 +692,23 @@
     '@media(prefers-color-scheme:dark){body{color:#E2EAF2;background:#0D141C}h2,hr{border-color:#2A3848}blockquote{border-color:#2A3848;color:#8296AB;background:rgba(255,255,255,.04)}code{background:rgba(255,255,255,.1)}a{color:#4DD4E8}}'
   ].join('');
 
+  // srcdocの再代入はiOS Safariで白画面になる既知の癖があるため、
+  // Blob URLへの通常ナビゲーションとして更新する(スクロール位置も引き継ぐ)
+  let previewUrl = null;
   function updatePreview() {
     const c = editor.value;
-    previewFrame.srcdoc = /<!doctype|<html[\s>]/i.test(c)
+    const html = /<!doctype|<html[\s>]/i.test(c)
       ? c
       : '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>' + PREVIEW_CSS + '</style></head><body>' + c + '</body></html>';
+    let scrollY = 0;
+    try { scrollY = previewFrame.contentWindow.scrollY || 0; } catch (_) {}
+    const old = previewUrl;
+    previewUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    previewFrame.onload = () => {
+      try { previewFrame.contentWindow.scrollTo(0, scrollY); } catch (_) {}
+    };
+    previewFrame.src = previewUrl;
+    if (old) URL.revokeObjectURL(old);
   }
   btnPreview.addEventListener('click', () => {
     const on = app.classList.toggle('preview');
@@ -694,6 +772,7 @@
     editor.setSelectionRange(sel[0], sel[1]);
     editor.scrollTop = d.scroll || 0;
     updateCount();
+    applyProfile(d.profile || 'all');
     if (app.classList.contains('preview')) updatePreview();
     if (app.classList.contains('search')) updateMatchCount();
     if (!outlineEl.hidden) buildOutline();
@@ -701,8 +780,8 @@
     schedulePersist();
   }
 
-  function addDoc(name, content, activate) {
-    const d = { id: uid++, name, content, sel: [0, 0], scroll: 0 };
+  function addDoc(name, content, activate, profile) {
+    const d = { id: uid++, name, content, sel: [0, 0], scroll: 0, profile: profile || 'all' };
     docs.push(d);
     if (activate === false) renderTabs();
     else switchTo(d.id);
@@ -793,7 +872,7 @@
       localStorage.setItem(KEY, JSON.stringify({
         v: 2,
         active: docs.findIndex(d => d.id === activeId),
-        docs: docs.map(d => ({ name: d.name, content: d.content }))
+        docs: docs.map(d => ({ name: d.name, content: d.content, profile: d.profile || 'all' }))
       }));
       flash('自動保存しました');
     } catch (_) {}
@@ -1221,7 +1300,7 @@
       }
     }
     if (data && Array.isArray(data.docs) && data.docs.length) {
-      for (const d of data.docs) addDoc(d.name || 'article.html', d.content || '', false);
+      for (const d of data.docs) addDoc(d.name || 'article.html', d.content || '', false, d.profile);
       const idx = Math.min(Math.max(data.active | 0, 0), docs.length - 1);
       switchTo(docs[idx].id);
       flash('前回の内容を復元しました');
