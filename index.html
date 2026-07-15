@@ -292,6 +292,51 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* ── 画像トレイ ── */
+  #imgTray {
+    flex: none;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #imgTray::-webkit-scrollbar { display: none; }
+  #app.imgtray #imgTray { display: flex; }
+  .imx {
+    position: relative;
+    flex: none;
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .imx img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .imx .del {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-height: 22px;
+    min-width: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: rgba(23, 34, 46, 0.55);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1;
+    box-shadow: none;
+  }
+  .imx .del.armed { background: var(--accent); color: var(--accent-contrast); }
+  #imgTrayInfo { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
+
   /* ── 編集面とプレビュー ── */
   #main { flex: 1; min-height: 0; display: flex; position: relative; }
   #editor {
@@ -490,12 +535,18 @@
     </div>
   </main>
 
+  <div id="imgTray">
+    <button type="button" id="btnAddImg">＋写真</button>
+    <span id="imgTrayInfo"></span>
+  </div>
+
   <footer>
     <span id="count"></span>
     <span id="note"></span>
   </footer>
 
   <input type="file" id="fileInput" accept=".html,.htm,.txt,.md" hidden>
+  <input type="file" id="imgInput" accept="image/*" multiple hidden>
 </div>
 
 <script>
@@ -728,7 +779,14 @@
   selWrap.appendChild(profileSel);
   const tagZone = document.createElement('div');
   tagZone.style.display = 'contents';
-  toolbar.append(undoBtn, redoBtn, searchBtn, outlineBtn, fmtWrap, selWrap, divider(), tagZone);
+  const imgBtn = mkBtn('画像');
+  imgBtn.setAttribute('aria-label', '画像トレイの表示切替');
+  imgBtn.addEventListener('click', () => {
+    const on = app.classList.toggle('imgtray');
+    imgBtn.classList.toggle('active', on);
+    if (on) renderTray();
+  });
+  toolbar.append(undoBtn, redoBtn, searchBtn, outlineBtn, imgBtn, fmtWrap, selWrap, divider(), tagZone);
 
   function currentFormat() { return (activeDoc() && activeDoc().format) || 'html'; }
 
@@ -779,6 +837,11 @@
     'ul,ol{padding-left:1.6em}',
     'li{margin:.3em 0}',
     'hr{border:none;border-top:1px solid #CDD8E3;margin:2em 0}',
+    'figure.ph{margin:1.2em 0;padding:10px;border:2px dashed #7FB5C6;border-radius:10px;background:rgba(11,114,133,.04);text-align:center}',
+    'figure.ph img{max-width:100%;max-height:320px;border-radius:6px}',
+    'figure.ph figcaption{font-size:12px;color:#4A6B78;margin-top:6px}',
+    '.ph-missing{padding:24px 8px;color:#8A96A3;font-size:13px}',
+    '@media(prefers-color-scheme:dark){figure.ph{border-color:#2E5866;background:rgba(59,201,219,.06)}figure.ph figcaption{color:#7FB0BE}}',
     '@media(prefers-color-scheme:dark){body{color:#E2EAF2;background:#0D141C}h2,hr{border-color:#2A3848}blockquote{border-color:#2A3848;color:#8296AB;background:rgba(255,255,255,.04)}code{background:rgba(255,255,255,.1)}a{color:#4DD4E8}}'
   ].join('');
 
@@ -796,9 +859,9 @@
         try { body = marked.parse(c, { gfm: true, breaks: true }); } catch (_) {}
       }
       if (body === null) body = '<p>(MDプレビューには marked.js の読み込みが必要です)</p><pre>' + escHtml(c) + '</pre>';
-      html = WRAP_OPEN + body + '</body></html>';
+      html = WRAP_OPEN + resolvePlaceholders(body) + '</body></html>';
     } else {
-      html = /<!doctype|<html[\s>]/i.test(c) ? c : WRAP_OPEN + c + '</body></html>';
+      html = /<!doctype|<html[\s>]/i.test(c) ? resolvePlaceholders(c) : WRAP_OPEN + resolvePlaceholders(c) + '</body></html>';
     }
     let scrollY = 0;
     try { scrollY = previewFrame.contentWindow.scrollY || 0; } catch (_) {}
@@ -958,7 +1021,7 @@
   function updateCount() {
     const v = editor.value;
     const body = currentFormat() === 'md'
-      ? v.replace(/^#{1,6}[ \t]+/gm, '').replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/^[-+*][ \t]+|^\d+\.[ \t]+|^>[ \t]?/gm, '').replace(/[*_`]/g, '').replace(/\n/g, '')
+      ? v.replace(/<!--[\s\S]*?-->/g, '').replace(/^#{1,6}[ \t]+/gm, '').replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/^[-+*][ \t]+|^\d+\.[ \t]+|^>[ \t]?/gm, '').replace(/[*_`]/g, '').replace(/\n/g, '')
       : v.replace(/<[^>]*>/g, '').replace(/\n/g, '');
     let s = '本文 ' + body.length.toLocaleString('ja-JP') + '字 / 全体 ' + v.length.toLocaleString('ja-JP') + '字';
     const selLen = editor.selectionEnd - editor.selectionStart;
@@ -1031,37 +1094,35 @@
     flash('ダウンロードしました');
   });
 
-  // 全文コピー（CMS等への貼り付け用）
+  // 全文コピー（CMS等への貼り付け用）。画像メモ(<!-- img:.. -->)は自動除去
+  function stripPlaceholders(s) {
+    return s.replace(/[ \t]*<!--\s*img:[\s\S]*?-->\n?/g, '');
+  }
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch (_) {}
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+    return ok;
+  }
   $('btnCopy').addEventListener('click', async () => {
-    const t = editor.value;
-    let done = false;
-    try { await navigator.clipboard.writeText(t); done = true; } catch (_) {}
-    if (!done) {
-      const s = editor.selectionStart, e = editor.selectionEnd;
-      editor.focus();
-      editor.select();
-      try { done = document.execCommand('copy'); } catch (_) {}
-      editor.setSelectionRange(s, e);
-    }
-    flash(done ? '全文をコピーしました' : 'コピーできませんでした');
+    const raw = editor.value;
+    const t = stripPlaceholders(raw);
+    const done = await copyText(t);
+    flash(done ? (t !== raw ? '全文をコピーしました(画像メモは除去)' : '全文をコピーしました') : 'コピーできませんでした');
   });
 
   // MDモード: HTMLに変換してコピー(CMS貼り付け用)
   $('btnCopyHtml').addEventListener('click', async () => {
     if (!window.marked) { flash('変換ライブラリ(marked)が読み込まれていません'); return; }
     let html;
-    try { html = marked.parse(editor.value, { gfm: true, breaks: true }).trim(); }
+    try { html = marked.parse(stripPlaceholders(editor.value), { gfm: true, breaks: true }).trim(); }
     catch (_) { flash('変換に失敗しました'); return; }
-    let done = false;
-    try { await navigator.clipboard.writeText(html); done = true; } catch (_) {}
-    if (!done) {
-      const ta = document.createElement('textarea');
-      ta.value = html;
-      document.body.appendChild(ta);
-      ta.select();
-      try { done = document.execCommand('copy'); } catch (_) {}
-      ta.remove();
-    }
+    const done = await copyText(html);
     flash(done ? 'HTMLに変換してコピーしました' : 'コピーできませんでした');
   });
 
@@ -1343,7 +1404,7 @@
   function buildTextView(v, fmt) {
     const chars = [], map = [];
     const re = fmt === 'md'
-      ? /\]\([^)\n]*\)|^#{1,6}[ \t]+|^>[ \t]?|^[-+*][ \t]+|^\d+\.[ \t]+|\*\*|[*_`]/gm
+      ? /<!--[\s\S]*?-->|\]\([^)\n]*\)|^#{1,6}[ \t]+|^>[ \t]?|^[-+*][ \t]+|^\d+\.[ \t]+|\*\*|[*_`]/gm
       : /<!--[\s\S]*?-->|<[^>]*>/g;
     let last = 0, m;
     while ((m = re.exec(v)) !== null) {
@@ -1578,6 +1639,143 @@
   $('btnCloseLint').addEventListener('click', closeLint);
   lintEl.addEventListener('click', e => { if (e.target === lintEl) closeLint(); });
 
+  // ── 画像配置(プレースホルダ方式) ──
+  // 写真は縮小版だけを端末内(IndexedDB)に保存し、本文には <!-- img:ID ラベル --> という
+  // コメント行だけを挿入する。プレビューでその位置に実物サムネイルを表示し、
+  // 「コピー」時にはコメントを自動除去するので納品HTMLは汚れない。
+  const imgTrayEl = $('imgTray'), imgTrayInfo = $('imgTrayInfo'), imgInput = $('imgInput');
+  const imgUrls = {};
+  let imgDB = null;
+
+  function idbOpen() {
+    return new Promise((res, rej) => {
+      const q = indexedDB.open('html-editor', 1);
+      q.onupgradeneeded = () => { q.result.createObjectStore('images', { keyPath: 'id', autoIncrement: true }); };
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  }
+  async function idbAll() {
+    if (!imgDB) imgDB = await idbOpen();
+    return new Promise((res, rej) => {
+      const q = imgDB.transaction('images').objectStore('images').getAll();
+      q.onsuccess = () => res(q.result || []);
+      q.onerror = () => rej(q.error);
+    });
+  }
+  async function idbPut(rec) {
+    if (!imgDB) imgDB = await idbOpen();
+    return new Promise((res, rej) => {
+      const q = imgDB.transaction('images', 'readwrite').objectStore('images').add(rec);
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  }
+  async function idbDel(id) {
+    if (!imgDB) imgDB = await idbOpen();
+    return new Promise((res, rej) => {
+      const q = imgDB.transaction('images', 'readwrite').objectStore('images').delete(id);
+      q.onsuccess = () => res();
+      q.onerror = () => rej(q.error);
+    });
+  }
+
+  // createImageBitmap優先+img要素フォールバック(非表示タブでのdecode問題対策)
+  function fileToBitmap(f) {
+    return createImageBitmap(f).catch(() => new Promise((res, rej) => {
+      const u = URL.createObjectURL(f);
+      const im = new Image();
+      im.onload = () => { URL.revokeObjectURL(u); res(im); };
+      im.onerror = rej;
+      im.src = u;
+    }));
+  }
+
+  async function importImages(files) {
+    let n = 0;
+    for (const f of files) {
+      try {
+        const bmp = await fileToBitmap(f);
+        const w0 = bmp.width || bmp.naturalWidth, h0 = bmp.height || bmp.naturalHeight;
+        const sc = Math.min(1, 800 / w0);
+        const w = Math.max(1, Math.round(w0 * sc)), h = Math.max(1, Math.round(h0 * sc));
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+        const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.8));
+        if (!blob) continue;
+        const label = (f.name || 'photo').replace(/\.[^.]+$/, '');
+        const id = await idbPut({ label, size: blob.size, blob, created: Date.now() });
+        imgUrls[id] = URL.createObjectURL(blob);
+        n++;
+      } catch (_) {}
+    }
+    await renderTray();
+    flash(n + '枚読み込みました(縮小版を端末内に保存)');
+  }
+
+  async function renderTray() {
+    let recs = [];
+    try { recs = await idbAll(); } catch (_) { imgTrayInfo.textContent = '画像DBを開けません'; return; }
+    imgTrayEl.querySelectorAll('.imx').forEach(el => el.remove());
+    let bytes = 0;
+    for (const rec of recs) {
+      bytes += rec.size || 0;
+      if (!imgUrls[rec.id]) imgUrls[rec.id] = URL.createObjectURL(rec.blob);
+      const box = document.createElement('div');
+      box.className = 'imx';
+      box.title = rec.label + '(タップで挿入)';
+      const im = document.createElement('img');
+      im.src = imgUrls[rec.id];
+      im.alt = rec.label;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'del';
+      del.textContent = '×';
+      del.setAttribute('aria-label', rec.label + ' を削除');
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!del.classList.contains('armed')) {
+          del.classList.add('armed');
+          setTimeout(() => del.classList.remove('armed'), 2000);
+          return;
+        }
+        await idbDel(rec.id);
+        if (imgUrls[rec.id]) { URL.revokeObjectURL(imgUrls[rec.id]); delete imgUrls[rec.id]; }
+        renderTray();
+        if (app.classList.contains('preview')) updatePreview();
+      });
+      box.append(im, del);
+      box.addEventListener('click', () => {
+        const ph = '\n<!-- img:' + rec.id + ' ' + rec.label + ' -->\n';
+        insert(ph, ph.length, ph.length);
+        flash('画像メモを挿入しました(コピー時は自動除去)');
+      });
+      imgTrayEl.appendChild(box);
+    }
+    imgTrayInfo.textContent = recs.length
+      ? recs.length + '枚 / 約' + (bytes / 1024 / 1024).toFixed(1) + 'MB'
+      : '「＋写真」で読み込むとここに並びます';
+  }
+
+  // プレビュー用: 画像メモをサムネイル付きの枠に置き換える
+  function resolvePlaceholders(src) {
+    return src.replace(/<!--\s*img:(\d+)\s*([\s\S]*?)-->/g, (mm, id, label) => {
+      const u = imgUrls[id];
+      const cap = escHtml((label || '').trim() || ('画像 ' + id));
+      const body = u ? '<img src="' + u + '" alt="">' : '<div class="ph-missing">(この端末に写真データがありません)</div>';
+      return '<figure class="ph">' + body + '<figcaption>📷 配置予定: ' + cap + '</figcaption></figure>';
+    });
+  }
+
+  $('btnAddImg').addEventListener('click', () => imgInput.click());
+  imgInput.addEventListener('change', () => {
+    if (imgInput.files.length) importImages([...imgInput.files]);
+    imgInput.value = '';
+  });
+  // トレイのタップでエディタのキーボードが閉じないようにする
+  imgTrayEl.addEventListener('mousedown', e => { if (e.target.closest('.imx')) e.preventDefault(); });
+
   // ── ハードウェアキーボード（Magic Keyboard等）──
   const byLabel = l => TAG_BUTTONS.find(b => b.label === l);
   editor.addEventListener('keydown', e => {
@@ -1629,6 +1827,7 @@
       addDoc('article.html', SAMPLE);
     }
     updateCount();
+    renderTray().catch(() => {});
   })();
 </script>
 <script>
