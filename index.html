@@ -335,6 +335,8 @@
     box-shadow: none;
   }
   .imx .del.armed { background: var(--accent); color: var(--accent-contrast); }
+  .imx.other { opacity: 0.5; }
+  .imx.other:active { opacity: 1; }
   #imgTrayInfo { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
 
   /* ── 編集面とプレビュー ── */
@@ -537,6 +539,8 @@
 
   <div id="imgTray">
     <button type="button" id="btnAddImg">＋写真</button>
+    <button type="button" id="btnTrayScope" title="トレイの表示範囲を切替">この記事</button>
+    <button type="button" id="btnImgClear" hidden>この記事を削除</button>
     <span id="imgTrayInfo"></span>
   </div>
 
@@ -939,12 +943,14 @@
     if (app.classList.contains('preview')) updatePreview();
     if (app.classList.contains('search')) updateMatchCount();
     if (!outlineEl.hidden) buildOutline();
+    if (app.classList.contains('imgtray')) renderTray();
     renderTabs();
     schedulePersist();
   }
 
-  function addDoc(name, content, activate, profile, format) {
-    const d = { id: uid++, name, content, sel: [0, 0], scroll: 0, profile: profile || 'all', format: format || 'html' };
+  function addDoc(name, content, activate, profile, format, key) {
+    // key: タブ(記事)の永続ID。画像のひも付けに使うため保存をまたいで安定させる
+    const d = { id: uid++, name, content, sel: [0, 0], scroll: 0, profile: profile || 'all', format: format || 'html', key: key || ('d' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)) };
     docs.push(d);
     if (activate === false) renderTabs();
     else switchTo(d.id);
@@ -1037,7 +1043,7 @@
       localStorage.setItem(KEY, JSON.stringify({
         v: 2,
         active: docs.findIndex(d => d.id === activeId),
-        docs: docs.map(d => ({ name: d.name, content: d.content, profile: d.profile || 'all', format: d.format || 'html' }))
+        docs: docs.map(d => ({ name: d.name, content: d.content, profile: d.profile || 'all', format: d.format || 'html', key: d.key }))
       }));
       flash('自動保存しました');
     } catch (_) {}
@@ -1693,6 +1699,8 @@
 
   async function importImages(files) {
     let n = 0;
+    // 読み込み開始時点のタブにひも付ける(処理中にタブを切り替えても安定)
+    const docKey = (activeDoc() && activeDoc().key) || null;
     for (const f of files) {
       try {
         const bmp = await fileToBitmap(f);
@@ -1705,26 +1713,32 @@
         const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.8));
         if (!blob) continue;
         const label = (f.name || 'photo').replace(/\.[^.]+$/, '');
-        const id = await idbPut({ label, size: blob.size, blob, created: Date.now() });
+        const id = await idbPut({ label, size: blob.size, blob, created: Date.now(), docKey });
         imgUrls[id] = URL.createObjectURL(blob);
         n++;
       } catch (_) {}
     }
     await renderTray();
-    flash(n + '枚読み込みました(縮小版を端末内に保存)');
+    flash(n + '枚読み込みました(この記事にひも付け・縮小版を保存)');
   }
+
+  // トレイの表示範囲: 'doc'=このタブの記事の写真だけ / 'all'=全部
+  let trayScope = 'doc';
 
   async function renderTray() {
     let recs = [];
     try { recs = await idbAll(); } catch (_) { imgTrayInfo.textContent = '画像DBを開けません'; return; }
     imgTrayEl.querySelectorAll('.imx').forEach(el => el.remove());
+    const curKey = (activeDoc() && activeDoc().key) || null;
     let bytes = 0;
-    for (const rec of recs) {
-      bytes += rec.size || 0;
+    for (const r0 of recs) bytes += r0.size || 0;
+    const shown = trayScope === 'doc' ? recs.filter(r => r.docKey && r.docKey === curKey) : recs;
+    for (const rec of shown) {
+      const isOther = !!(rec.docKey && rec.docKey !== curKey);
       if (!imgUrls[rec.id]) imgUrls[rec.id] = URL.createObjectURL(rec.blob);
       const box = document.createElement('div');
-      box.className = 'imx';
-      box.title = rec.label + '(タップで挿入)';
+      box.className = 'imx' + (isOther ? ' other' : '');
+      box.title = rec.label + (isOther ? '(他の記事の写真)' : '') + '(タップで挿入)';
       const im = document.createElement('img');
       im.src = imgUrls[rec.id];
       im.alt = rec.label;
@@ -1753,10 +1767,54 @@
       });
       imgTrayEl.appendChild(box);
     }
-    imgTrayInfo.textContent = recs.length
-      ? recs.length + '枚 / 約' + (bytes / 1024 / 1024).toFixed(1) + 'MB'
-      : '「＋写真」で読み込むとここに並びます';
+    const mb = (bytes / 1024 / 1024).toFixed(1);
+    const clearBtn = $('btnImgClear');
+    clearBtn.hidden = shown.length === 0;
+    if (!clearBtn.classList.contains('armed')) {
+      clearBtn.textContent = trayScope === 'doc' ? 'この記事を削除' : '全部削除';
+    }
+    if (!recs.length) {
+      imgTrayInfo.textContent = '「＋写真」で読み込むとここに並びます';
+    } else if (trayScope === 'doc') {
+      imgTrayInfo.textContent = shown.length
+        ? 'この記事 ' + shown.length + '枚(全体 ' + recs.length + '枚・約' + mb + 'MB)'
+        : 'この記事の写真はまだありません(「すべて」に' + recs.length + '枚)';
+    } else {
+      imgTrayInfo.textContent = '全体 ' + recs.length + '枚・約' + mb + 'MB';
+    }
   }
+
+  $('btnTrayScope').addEventListener('click', () => {
+    trayScope = trayScope === 'doc' ? 'all' : 'doc';
+    $('btnTrayScope').textContent = trayScope === 'doc' ? 'この記事' : 'すべて';
+    renderTray();
+  });
+
+  // まとめて削除(表示中の範囲に従う: 「この記事」表示中はその記事の写真だけ、「すべて」表示中は全部)
+  const btnImgClear = $('btnImgClear');
+  btnImgClear.addEventListener('click', async () => {
+    if (!btnImgClear.classList.contains('armed')) {
+      btnImgClear.classList.add('armed');
+      btnImgClear.textContent = 'もう一度で削除';
+      setTimeout(() => {
+        btnImgClear.classList.remove('armed');
+        btnImgClear.textContent = trayScope === 'doc' ? 'この記事を削除' : '全部削除';
+      }, 2500);
+      return;
+    }
+    btnImgClear.classList.remove('armed');
+    let recs = [];
+    try { recs = await idbAll(); } catch (_) { return; }
+    const curKey = (activeDoc() && activeDoc().key) || null;
+    const targets = trayScope === 'doc' ? recs.filter(r => r.docKey && r.docKey === curKey) : recs;
+    for (const r of targets) {
+      await idbDel(r.id);
+      if (imgUrls[r.id]) { URL.revokeObjectURL(imgUrls[r.id]); delete imgUrls[r.id]; }
+    }
+    await renderTray();
+    if (app.classList.contains('preview')) updatePreview();
+    flash(targets.length + '枚削除しました');
+  });
 
   // プレビュー用: 画像メモをサムネイル付きの枠に置き換える
   function resolvePlaceholders(src) {
@@ -1819,7 +1877,7 @@
       }
     }
     if (data && Array.isArray(data.docs) && data.docs.length) {
-      for (const d of data.docs) addDoc(d.name || 'article.html', d.content || '', false, d.profile, d.format);
+      for (const d of data.docs) addDoc(d.name || 'article.html', d.content || '', false, d.profile, d.format, d.key);
       const idx = Math.min(Math.max(data.active | 0, 0), docs.length - 1);
       switchTo(docs[idx].id);
       flash('前回の内容を復元しました');
