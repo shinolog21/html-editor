@@ -337,6 +337,24 @@
   .imx .del.armed { background: var(--accent); color: var(--accent-contrast); }
   .imx.other { opacity: 0.5; }
   .imx.other:active { opacity: 1; }
+  .imx.placed img { opacity: 0.55; }
+  .imx .ck {
+    position: absolute;
+    left: 2px;
+    bottom: 2px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 3px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
   #imgTrayInfo { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
 
   /* ── 編集面とプレビュー ── */
@@ -1001,7 +1019,7 @@
   tabbar.addEventListener('mousedown', e => e.preventDefault());
 
   // ── 自動保存と文字数 ──
-  let saveT, prevT, outlineT;
+  let saveT, prevT, outlineT, trayT;
   function schedulePersist() { clearTimeout(saveT); saveT = setTimeout(persist, 600); }
   editor.addEventListener('input', () => {
     const d = activeDoc();
@@ -1013,6 +1031,7 @@
     }
     if (app.classList.contains('search')) updateMatchCount();
     if (!outlineEl.hidden) { clearTimeout(outlineT); outlineT = setTimeout(buildOutline, 400); }
+    if (app.classList.contains('imgtray')) { clearTimeout(trayT); trayT = setTimeout(renderTray, 400); }
   });
   filenameInput.addEventListener('input', () => {
     const d = activeDoc();
@@ -1733,12 +1752,16 @@
     let bytes = 0;
     for (const r0 of recs) bytes += r0.size || 0;
     const shown = trayScope === 'doc' ? recs.filter(r => r.docKey && r.docKey === curKey) : recs;
+    // 本文に配置済みの写真ID(現在のタブの原稿を走査)
+    const placedIds = new Set();
+    { const pre2 = /<!--\s*img:(\d+)/g; let pm; while ((pm = pre2.exec(editor.value)) !== null) placedIds.add(+pm[1]); }
     for (const rec of shown) {
       const isOther = !!(rec.docKey && rec.docKey !== curKey);
+      const isPlaced = placedIds.has(rec.id);
       if (!imgUrls[rec.id]) imgUrls[rec.id] = URL.createObjectURL(rec.blob);
       const box = document.createElement('div');
-      box.className = 'imx' + (isOther ? ' other' : '');
-      box.title = rec.label + (isOther ? '(他の記事の写真)' : '') + '(タップで挿入)';
+      box.className = 'imx' + (isOther ? ' other' : '') + (isPlaced ? ' placed' : '');
+      box.title = (isPlaced ? '【配置済み】' : '') + rec.label + (isOther ? '(他の記事の写真)' : '') + '(タップで挿入)';
       const im = document.createElement('img');
       im.src = imgUrls[rec.id];
       im.alt = rec.label;
@@ -1760,10 +1783,16 @@
         if (app.classList.contains('preview')) updatePreview();
       });
       box.append(im, del);
+      if (isPlaced) {
+        const ck = document.createElement('span');
+        ck.className = 'ck';
+        ck.textContent = '✓';
+        box.appendChild(ck);
+      }
       box.addEventListener('click', () => {
         const ph = '\n<!-- img:' + rec.id + ' ' + rec.label + ' -->\n';
         insert(ph, ph.length, ph.length);
-        flash('画像メモを挿入しました(コピー時は自動除去)');
+        flash(isPlaced ? '※この写真は配置済みでした(重複挿入)' : '画像メモを挿入しました(コピー時は自動除去)');
       });
       imgTrayEl.appendChild(box);
     }
